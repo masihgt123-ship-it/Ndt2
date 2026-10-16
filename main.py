@@ -327,7 +327,6 @@ class CalculationScreen(Screen):
         if not self.ready:
             return
 
-        # When a required input is empty, display an initial zero.
         self.result.set_text('0')
         self.result.color = TEXT
         self.details.set_text('')
@@ -407,7 +406,6 @@ class SafetyScreen(CalculationScreen):
             self.value('shield')
         )
 
-        # Do not round a positive estimate to zero.
         return (
             f'{distance:.4g} متر',
             f'ضریب عبور سرب: {transmission:.4g}'
@@ -551,6 +549,7 @@ class NDTMainApp(App):
 
     def build(self):
         self.title = BRAND
+        self.icon = str(BASE / 'icon.png')
         Window.clearcolor = BG
         Window.softinput_mode = 'below_target'
         Window.bind(on_keyboard=self.on_keyboard)
@@ -621,12 +620,6 @@ class NDTMainApp(App):
         )
         self.sm.add_widget(
             PendingScreen(
-                'محاسبات ایکس‌ری',
-                name='xray'
-            )
-        )
-        self.sm.add_widget(
-            PendingScreen(
                 'زمان پرتودهی',
                 name='exposure'
             )
@@ -635,22 +628,33 @@ class NDTMainApp(App):
 
         nav = Card(
             size_hint_y=None,
-            height=dp(54),
-            padding=dp(5),
-            spacing=dp(5)
+            height=dp(62),
+            padding=dp(6),
+            spacing=dp(6)
         )
 
         self.nav_buttons = {}
 
         for label, name in (
             ('مرزبندی', 'safety'),
-            ('ایکس‌ری', 'xray'),
             ('واپاشی', 'decay'),
             ('پرتودهی', 'exposure'),
             ('اطلاعات', 'info')
         ):
-            button = BlueButton(label)
+            button = BlueButton(
+                label,
+                size_hint=(1, 1),
+                halign='center',
+                valign='middle',
+                shorten=True,
+                shorten_from='right'
+            )
             button.bind(
+                size=lambda widget, size: setattr(
+                    widget,
+                    'text_size',
+                    (max(0, size[0] - dp(8)), size[1])
+                ),
                 on_release=lambda _, target=name:
                 self.switch_tab(target)
             )
