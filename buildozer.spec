@@ -9,9 +9,11 @@ source.dir = .
 source.include_exts = py,kv,png,jpg,jpeg,ttf,atlas,txt
 source.exclude_dirs = .git,.github,.buildozer,bin,tests
 
-version = 0.1.0
+version = 0.2.0
 
 requirements = python3==3.11.5,hostpython3==3.11.5,kivy==2.3.0,arabic-reshaper==3.0.0,python-bidi==0.4.2
+
+icon.filename = %(source.dir)s/icon.png
 
 orientation = portrait
 fullscreen = 0
