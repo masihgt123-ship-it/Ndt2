@@ -4,11 +4,18 @@ from pathlib import Path
 
 import arabic_reshaper
 from bidi.algorithm import get_display
+
 from kivy.app import App
+from kivy.clock import Clock
 from kivy.core.image import Image as CoreImage
 from kivy.core.text import Label as CoreLabel
 from kivy.core.window import Window
-from kivy.graphics import Color, Line, Rectangle, RoundedRectangle
+from kivy.graphics import (
+    Color,
+    Line,
+    Rectangle,
+    RoundedRectangle,
+)
 from kivy.metrics import dp, sp
 from kivy.properties import ListProperty, StringProperty
 from kivy.uix.boxlayout import BoxLayout
@@ -16,44 +23,89 @@ from kivy.uix.button import Button
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.image import Image
 from kivy.uix.label import Label
-from kivy.uix.screenmanager import FadeTransition, Screen, ScreenManager
+from kivy.uix.progressbar import ProgressBar
+from kivy.uix.screenmanager import (
+    FadeTransition,
+    Screen,
+    ScreenManager,
+)
 from kivy.uix.scrollview import ScrollView
 from kivy.uix.textinput import TextInput
 
-from calculations import ISOTOPES, boundary_estimate, decay, number
+from calculations import (
+    ISOTOPES,
+    boundary_estimate,
+    decay,
+    number,
+)
+
 
 BASE = Path(__file__).resolve().parent
-FONT = str(BASE / 'font.ttf')
-BRAND = 'شرکت رادیوگرافی صنعتی ایران'
 
-BG = (11/255, 16/255, 35/255, 1)
-CARD = (21/255, 29/255, 57/255, 1)
-BORDER = (43/255, 54/255, 92/255, 1)
-ACCENT = (134/255, 166/255, 255/255, 1)
-TEXT = (.95, .96, 1, 1)
-MUTED = (.64, .69, .81, 1)
-ERROR = (1, .68, .67, 1)
-RESULT = (.125, .18, .34, 1)
+BRAND = "شرکت رادیوگرافی صنعتی ایران"
+
+BG = (11 / 255, 16 / 255, 35 / 255, 1)
+CARD = (21 / 255, 29 / 255, 57 / 255, 1)
+BORDER = (43 / 255, 54 / 255, 92 / 255, 1)
+ACCENT = (134 / 255, 166 / 255, 255 / 255, 1)
+TEXT = (0.95, 0.96, 1, 1)
+MUTED = (0.64, 0.69, 0.81, 1)
+ERROR = (1, 0.68, 0.67, 1)
+RESULT = (0.125, 0.18, 0.34, 1)
+
+SPLASH_SECONDS = 3.0
+
+
+def find_font():
+    for path in (
+        BASE / "assets" / "font.ttf",
+        BASE / "font.ttf",
+    ):
+        if path.is_file():
+            return str(path)
+
+    logging.warning(
+        "font.ttf not found. Using Roboto."
+    )
+    return "Roboto"
+
+
+FONT = find_font()
 
 
 def fa(text):
-    return get_display(arabic_reshaper.reshape(str(text)))
+    return get_display(
+        arabic_reshaper.reshape(str(text))
+    )
 
 
 class FaLabel(Label):
-    def __init__(self, text='', **kwargs):
+    def __init__(self, text="", **kwargs):
         self.logical_text = str(text)
-        kwargs.setdefault('font_size', sp(13))
-        kwargs.setdefault('color', MUTED)
-        kwargs.setdefault('halign', 'right')
-        kwargs.setdefault('size_hint_y', None)
-        super().__init__(font_name=FONT, **kwargs)
+        self._measure = None
 
-        self._measure = CoreLabel(
-            font_name=FONT,
-            font_size=self.font_size
+        kwargs.setdefault("font_name", FONT)
+        kwargs.setdefault("font_size", sp(13))
+        kwargs.setdefault("color", MUTED)
+        kwargs.setdefault("halign", "right")
+        kwargs.setdefault("size_hint_y", None)
+
+        super().__init__(**kwargs)
+
+        self._update_measure()
+
+        self.bind(
+            width=self._wrap,
+            texture_size=self._fit,
+            font_size=self._update_measure,
+            font_name=self._update_measure,
         )
-        self.bind(width=self._wrap, texture_size=self._fit)
+
+    def _update_measure(self, *args):
+        self._measure = CoreLabel(
+            font_name=self.font_name,
+            font_size=self.font_size,
+        )
         self._wrap()
 
     def set_text(self, text):
@@ -61,13 +113,18 @@ class FaLabel(Label):
         self._wrap()
 
     def _wrap(self, *args):
+        if self._measure is None:
+            return
+
         width = max(dp(20), self.width - dp(4))
         lines = []
 
-        for paragraph in self.logical_text.split('\n'):
-            line = ''
+        for paragraph in self.logical_text.split("\n"):
+            line = ""
+
             for word in paragraph.split():
-                candidate = (line + ' ' + word).strip()
+                candidate = (line + " " + word).strip()
+
                 measured_width = self._measure.get_extents(
                     fa(candidate)
                 )[0]
@@ -81,12 +138,12 @@ class FaLabel(Label):
             lines.append(fa(line))
 
         self.text_size = (width, None)
-        self.text = '\n'.join(lines)
+        self.text = "\n".join(lines)
 
     def _fit(self, *args):
         self.height = max(
             dp(22),
-            self.texture_size[1] + dp(6)
+            self.texture_size[1] + dp(6),
         )
 
 
@@ -98,14 +155,16 @@ class Card(BoxLayout):
 
         with self.canvas.before:
             self._color = Color(*self.fill)
-            self._rect = RoundedRectangle(radius=[dp(13)])
+            self._rect = RoundedRectangle(
+                radius=[dp(13)]
+            )
             Color(*BORDER)
             self._line = Line(width=1)
 
         self.bind(
             pos=self._paint,
             size=self._paint,
-            fill=self._paint
+            fill=self._paint,
         )
         self._paint()
 
@@ -113,36 +172,45 @@ class Card(BoxLayout):
         self._color.rgba = self.fill
         self._rect.pos = self.pos
         self._rect.size = self.size
+
         self._line.rounded_rectangle = (
-            *self.pos, *self.size, dp(13)
+            *self.pos,
+            *self.size,
+            dp(13),
         )
 
 
 class BlueButton(Button):
     fill = ListProperty(CARD)
 
-    def __init__(self, text='', **kwargs):
+    def __init__(self, text="", **kwargs):
+        kwargs.setdefault("font_name", FONT)
+        kwargs.setdefault("font_size", sp(13))
+        kwargs.setdefault("color", MUTED)
+        kwargs.setdefault("background_normal", "")
+        kwargs.setdefault("background_down", "")
+        kwargs.setdefault(
+            "background_color",
+            (0, 0, 0, 0),
+        )
+
         super().__init__(
             text=fa(text),
-            font_name=FONT,
-            font_size=sp(13),
-            color=MUTED,
-            background_normal='',
-            background_down='',
-            background_color=(0, 0, 0, 0),
-            **kwargs
+            **kwargs,
         )
 
         with self.canvas.before:
             self._color = Color(*self.fill)
-            self._rect = RoundedRectangle(radius=[dp(11)])
+            self._rect = RoundedRectangle(
+                radius=[dp(11)]
+            )
             Color(*BORDER)
             self._line = Line(width=1)
 
         self.bind(
             pos=self._paint,
             size=self._paint,
-            fill=self._paint
+            fill=self._paint,
         )
         self._paint()
 
@@ -150,8 +218,11 @@ class BlueButton(Button):
         self._color.rgba = self.fill
         self._rect.pos = self.pos
         self._rect.size = self.size
+
         self._line.rounded_rectangle = (
-            *self.pos, *self.size, dp(11)
+            *self.pos,
+            *self.size,
+            dp(11),
         )
 
     def select(self, active):
@@ -160,16 +231,27 @@ class BlueButton(Button):
 
 
 class InputCard(Card):
-    def __init__(self, title, unit, default='', **kwargs):
+    def __init__(
+        self,
+        title,
+        unit,
+        default="",
+        **kwargs,
+    ):
         super().__init__(
-            orientation='vertical',
+            orientation="vertical",
             padding=dp(10),
             size_hint_y=None,
             height=dp(100),
-            **kwargs
+            **kwargs,
         )
 
-        self.add_widget(FaLabel(title, font_size=sp(12)))
+        self.add_widget(
+            FaLabel(
+                title,
+                font_size=sp(12),
+            )
+        )
 
         self.input = TextInput(
             text=default,
@@ -178,19 +260,25 @@ class InputCard(Card):
             font_size=sp(25),
             size_hint_y=None,
             height=dp(38),
-            halign='right',
-            background_normal='',
-            background_active='',
+            halign="right",
+            background_normal="",
+            background_active="",
             background_color=(0, 0, 0, 0),
             foreground_color=TEXT,
             cursor_color=ACCENT,
             padding=[0, dp(2)],
             write_tab=False,
-            input_type='number'
+            input_type="number",
         )
+
         self.add_widget(self.input)
+
         self.add_widget(
-            FaLabel(unit, font_size=sp(10), halign='left')
+            FaLabel(
+                unit,
+                font_size=sp(10),
+                halign="left",
+            )
         )
 
 
@@ -205,31 +293,39 @@ class CalculationScreen(Screen):
 
         scroll = ScrollView(
             do_scroll_x=False,
-            bar_width=dp(3)
+            bar_width=dp(3),
         )
 
         self.content = BoxLayout(
-            orientation='vertical',
+            orientation="vertical",
             size_hint_y=None,
             padding=[dp(16), dp(8)],
-            spacing=dp(10)
+            spacing=dp(10),
         )
         self.content.bind(
-            minimum_height=self.content.setter('height')
+            minimum_height=self.content.setter("height")
         )
 
         self.content.add_widget(
-            FaLabel(title, font_size=sp(21), color=TEXT)
+            FaLabel(
+                title,
+                font_size=sp(21),
+                color=TEXT,
+            )
         )
+
         self.content.add_widget(
-            FaLabel('انتخاب ایزوتوپ', font_size=sp(12))
+            FaLabel(
+                "انتخاب ایزوتوپ",
+                font_size=sp(12),
+            )
         )
 
         selectors = GridLayout(
             cols=4,
             spacing=dp(6),
             size_hint_y=None,
-            height=dp(36)
+            height=dp(36),
         )
 
         self.iso_buttons = {}
@@ -240,6 +336,7 @@ class CalculationScreen(Screen):
                 on_release=lambda _, key=source:
                 app.set_source(key)
             )
+
             selectors.add_widget(button)
             self.iso_buttons[source] = button
 
@@ -247,41 +344,66 @@ class CalculationScreen(Screen):
         scroll.add_widget(self.content)
         self.add_widget(scroll)
 
-        app.bind(current_source=self.source_changed)
+        app.bind(
+            current_source=self.source_changed
+        )
 
-    def field(self, key, title, unit, default, parent=None):
-        card = InputCard(title, unit, default)
+    def field(
+        self,
+        key,
+        title,
+        unit,
+        default,
+        parent=None,
+    ):
+        card = InputCard(
+            title,
+            unit,
+            default,
+        )
+
         self.inputs[key] = card.input
         self.titles[key] = title
 
-        target = parent if parent is not None else self.content
+        target = (
+            parent
+            if parent is not None
+            else self.content
+        )
+
         target.add_widget(card)
         card.input.bind(text=self.calc)
 
     def finish(self, result_title):
         card = Card(
-            orientation='vertical',
+            orientation="vertical",
             padding=dp(12),
             spacing=dp(3),
             size_hint_y=None,
-            fill=RESULT
+            fill=RESULT,
         )
-        card.bind(minimum_height=card.setter('height'))
+        card.bind(
+            minimum_height=card.setter("height")
+        )
 
         card.add_widget(
-            FaLabel(result_title, color=(.76, .83, 1, 1))
+            FaLabel(
+                result_title,
+                color=(0.76, 0.83, 1, 1),
+            )
         )
 
         self.result = FaLabel(
-            '0',
-            halign='center',
+            "0",
+            halign="center",
             font_size=sp(31),
-            color=TEXT
+            color=TEXT,
         )
+
         self.details = FaLabel(
-            '',
-            halign='center',
-            font_size=sp(12)
+            "",
+            halign="center",
+            font_size=sp(12),
         )
 
         card.add_widget(self.result)
@@ -290,21 +412,23 @@ class CalculationScreen(Screen):
 
         self.content.add_widget(
             FaLabel(
-                'برآورد مدل؛ نه تأیید ایمنی',
+                "برآورد مدل؛ نه تأیید ایمنی",
                 color=ERROR,
-                halign='center',
-                font_size=sp(12)
+                halign="center",
+                font_size=sp(12),
             )
         )
 
         button = BlueButton(
-            'درباره محاسبات و محدودیت‌ها',
+            "درباره محاسبات و محدودیت‌ها",
             size_hint_y=None,
-            height=dp(42)
+            height=dp(42),
         )
         button.bind(
-            on_release=lambda _: self.app.switch_tab('info')
+            on_release=lambda _:
+            self.app.switch_tab("info")
         )
+
         self.content.add_widget(button)
 
         self.ready = True
@@ -312,7 +436,9 @@ class CalculationScreen(Screen):
 
     def source_changed(self, *args):
         for key, button in self.iso_buttons.items():
-            button.select(key == self.app.current_source)
+            button.select(
+                key == self.app.current_source
+            )
 
         self.calc()
 
@@ -320,16 +446,16 @@ class CalculationScreen(Screen):
         return number(
             self.inputs[key].text,
             self.titles[key],
-            positive
+            positive,
         )
 
     def calc(self, *args):
         if not self.ready:
             return
 
-        self.result.set_text('0')
         self.result.color = TEXT
-        self.details.set_text('')
+        self.result.set_text("0")
+        self.details.set_text("")
 
         if any(
             not field.text.strip()
@@ -339,28 +465,28 @@ class CalculationScreen(Screen):
 
         try:
             result, details = self.compute()
-            self.result.color = TEXT
             self.result.set_text(result)
             self.details.set_text(details)
 
         except (ValueError, OverflowError) as exc:
             self.result.color = ERROR
-            self.result.set_text('خطا')
+            self.result.set_text("خطا")
+
             self.details.set_text(
                 str(exc)
                 if isinstance(exc, ValueError)
-                else 'عدد خارج از محدوده محاسبه است'
+                else "عدد خارج از محدوده محاسبه است"
             )
 
         except Exception:
             logging.exception(
-                'Calculation failed on %s',
-                self.name
+                "Calculation failed on %s",
+                self.name,
             )
             self.result.color = ERROR
-            self.result.set_text('خطا')
+            self.result.set_text("خطا")
             self.details.set_text(
-                'خطای داخلی؛ گزارش برنامه را بررسی کنید'
+                "خطای داخلی؛ گزارش برنامه را بررسی کنید"
             )
 
 
@@ -368,47 +494,53 @@ class SafetyScreen(CalculationScreen):
     def __init__(self, app, **kwargs):
         super().__init__(
             app,
-            'مرزبندی و حفاظ',
-            **kwargs
+            "مرزبندی و حفاظ",
+            **kwargs,
         )
 
         row = BoxLayout(
             spacing=dp(10),
             size_hint_y=None,
-            height=dp(100)
+            height=dp(100),
         )
         self.content.add_widget(row)
 
         self.field(
-            'activity', 'اکتیویته', 'Ci', '40', row
-        )
-        self.field(
-            'dose',
-            'نرخ دوز هدف طبق طرح مصوب',
-            'µSv/h',
-            '',
-            row
-        )
-        self.field(
-            'shield',
-            'ضخامت سرب در مسیر پرتو',
-            'mm',
-            '0'
+            "activity",
+            "اکتیویته",
+            "Ci",
+            "40",
+            row,
         )
 
-        self.finish('فاصله برآوردی مدل')
+        self.field(
+            "dose",
+            "نرخ دوز هدف طبق طرح مصوب",
+            "µSv/h",
+            "",
+            row,
+        )
+
+        self.field(
+            "shield",
+            "ضخامت سرب در مسیر پرتو",
+            "mm",
+            "0",
+        )
+
+        self.finish("فاصله برآوردی مدل")
 
     def compute(self):
         distance, transmission = boundary_estimate(
             self.app.current_source,
-            self.value('activity'),
-            self.value('dose', True),
-            self.value('shield')
+            self.value("activity"),
+            self.value("dose", True),
+            self.value("shield"),
         )
 
         return (
-            f'{distance:.4g} متر',
-            f'ضریب عبور سرب: {transmission:.4g}'
+            f"{distance:.4g} متر",
+            f"ضریب عبور سرب: {transmission:.4g}",
         )
 
 
@@ -416,99 +548,155 @@ class DecayScreen(CalculationScreen):
     def __init__(self, app, **kwargs):
         super().__init__(
             app,
-            'واپاشی چشمه',
-            **kwargs
+            "واپاشی چشمه",
+            **kwargs,
         )
 
         self.field(
-            'initial', 'اکتیویته اولیه', 'Ci', '80'
+            "initial",
+            "اکتیویته اولیه",
+            "Ci",
+            "80",
         )
+
         self.field(
-            'days', 'روزهای سپری‌شده', 'روز', '30'
+            "days",
+            "روزهای سپری‌شده",
+            "روز",
+            "30",
         )
-        self.finish('اکتیویته پس از واپاشی')
+
+        self.finish("اکتیویته پس از واپاشی")
 
     def compute(self):
-        initial = self.value('initial')
+        initial = self.value("initial")
 
         activity, percent = decay(
             self.app.current_source,
             initial,
-            self.value('days')
+            self.value("days"),
         )
 
-        details = (
-            f'کاهش نسبت به مقدار اولیه: {percent:.2f}٪'
-            if initial
-            else 'برای اکتیویته اولیه صفر، درصد کاهش تعریف نمی‌شود.'
-        )
+        if initial:
+            details = (
+                f"کاهش نسبت به مقدار اولیه: {percent:.2f}٪"
+            )
+        else:
+            details = (
+                "برای اکتیویته اولیه صفر، "
+                "درصد کاهش تعریف نمی‌شود."
+            )
 
-        return f'{activity:.6g} Ci', details
+        return f"{activity:.6g} Ci", details
 
 
 class InfoScreen(Screen):
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
 
-        scroll = ScrollView(do_scroll_x=False)
+        scroll = ScrollView(
+            do_scroll_x=False
+        )
 
         content = BoxLayout(
-            orientation='vertical',
+            orientation="vertical",
             size_hint_y=None,
             padding=dp(16),
-            spacing=dp(12)
+            spacing=dp(12),
         )
         content.bind(
-            minimum_height=content.setter('height')
+            minimum_height=content.setter("height")
         )
 
         content.add_widget(
             FaLabel(
-                'اطلاعات و محدودیت‌ها',
+                "اطلاعات و محدودیت‌ها",
                 font_size=sp(21),
-                color=TEXT
+                color=TEXT,
             )
         )
 
         paragraphs = [
-            'نتایج این برنامه صرفاً برآورد هستند؛ تأیید ایمنی، طراحی حفاظ یا تعیین محل مجاز اپراتور نیستند. مرزبندی عملی باید طبق طرح مصوب و با نظر مسئول حفاظت پرتویی و اندازه‌گیری در محل انجام شود.',
-            'داده‌های ایزوتوپ از کد اولیه منتقل شده‌اند و مستقلاً تأیید نشده‌اند. نیمه‌عمر و اکتیویته باید با گواهی چشمه و منابع معتبر تطبیق داده شوند.',
-            'مدل گاما، چشمه نقطه‌ای و قانون عکس مجذور فاصله با HVL ثابت سرب را فرض می‌کند. پراکندگی، buildup، نشتی و هندسه واقعی لحاظ نمی‌شوند. تبدیل R/h به µSv/h با ضریب تقریبی ۱۰۰۰۰ از کد اولیه حفظ شده است.',
-            'ضخامت بدنه کولیماتور برای دهانه خروجی پرتو قابل استفاده نیست. عدد پیش‌فرض نرخ دوز، مجوز یا توصیه قانونی نیست؛ مقدار هدف باید از طرح مصوب گرفته شود. نتیجه باید با دستگاه مناسب و کالیبره بررسی شود.',
-            'واپاشی بر حسب تعداد روز واردشده محاسبه می‌شود؛ تاریخ امروز یا تاریخ گواهی به‌طور خودکار محاسبه نمی‌شود. اکتیویته صفر صرفاً نتیجه عددی است، نه اعلام ایمنی.',
+            (
+                "نتایج این برنامه صرفاً برآورد هستند؛ "
+                "تأیید ایمنی، طراحی حفاظ یا تعیین محل مجاز "
+                "اپراتور نیستند. مرزبندی عملی باید طبق طرح "
+                "مصوب و با نظر مسئول حفاظت پرتویی و "
+                "اندازه‌گیری در محل انجام شود."
+            ),
+            (
+                "داده‌های ایزوتوپ از کد اولیه منتقل شده‌اند "
+                "و مستقلاً تأیید نشده‌اند. نیمه‌عمر و اکتیویته "
+                "باید با گواهی چشمه و منابع معتبر تطبیق داده شوند."
+            ),
+            (
+                "مدل گاما، چشمه نقطه‌ای و قانون عکس مجذور "
+                "فاصله با HVL ثابت سرب را فرض می‌کند. "
+                "پراکندگی، buildup، نشتی و هندسه واقعی لحاظ "
+                "نمی‌شوند. تبدیل R/h به µSv/h با ضریب "
+                "تقریبی ۱۰۰۰۰ از کد اولیه حفظ شده است."
+            ),
+            (
+                "ضخامت بدنه کولیماتور برای دهانه خروجی "
+                "پرتو قابل استفاده نیست. مقدار هدف نرخ دوز "
+                "باید از طرح مصوب گرفته شود. نتیجه باید "
+                "با دستگاه مناسب و کالیبره بررسی شود."
+            ),
+            (
+                "واپاشی بر حسب تعداد روز واردشده محاسبه "
+                "می‌شود؛ تاریخ امروز یا تاریخ گواهی به‌طور "
+                "خودکار محاسبه نمی‌شود. اکتیویته صفر صرفاً "
+                "نتیجه عددی است، نه اعلام ایمنی."
+            ),
         ]
 
         for paragraph in paragraphs:
             card = Card(
-                orientation='vertical',
+                orientation="vertical",
                 size_hint_y=None,
-                padding=dp(12)
+                padding=dp(12),
             )
             card.bind(
-                minimum_height=card.setter('height')
+                minimum_height=card.setter("height")
             )
             card.add_widget(
-                FaLabel(paragraph, color=TEXT)
+                FaLabel(
+                    paragraph,
+                    color=TEXT,
+                )
             )
             content.add_widget(card)
 
         for key, data in ISOTOPES.items():
             card = Card(
-                orientation='vertical',
+                orientation="vertical",
                 size_hint_y=None,
-                padding=dp(12)
+                padding=dp(12),
             )
             card.bind(
-                minimum_height=card.setter('height')
+                minimum_height=card.setter("height")
             )
 
-            for text in (
+            texts = (
                 f"{data['name']} ({key})",
-                f"نیمه‌عمر: {data['half_life']} روز | انرژی درج‌شده: {data['energy']}",
-                f"ثابت گامای ورودی: {data['gamma']} R·m²/(Ci·h)",
-                f"HVL سرب: {data['hvl_pb']} mm | فولاد: {data['hvl_fe']} mm",
-            ):
-                card.add_widget(FaLabel(text))
+                (
+                    f"نیمه‌عمر: {data['half_life']} روز"
+                    f" | انرژی درج‌شده: {data['energy']}"
+                ),
+                (
+                    "ثابت گامای ورودی: "
+                    f"{data['gamma']} R·m²/(Ci·h)"
+                ),
+                (
+                    f"HVL سرب: {data['hvl_pb']} mm"
+                    f" | فولاد: {data['hvl_fe']} mm"
+                ),
+            )
+
+            for text in texts:
+                card.add_widget(
+                    FaLabel(text)
+                )
 
             content.add_widget(card)
 
@@ -521,143 +709,286 @@ class PendingScreen(Screen):
         super().__init__(**kwargs)
 
         content = BoxLayout(
-            orientation='vertical',
+            orientation="vertical",
             padding=dp(20),
-            spacing=dp(16)
+            spacing=dp(16),
         )
+
         content.add_widget(
             FaLabel(
                 title,
                 font_size=sp(22),
-                color=TEXT
+                color=TEXT,
             )
         )
+
         content.add_widget(
             FaLabel(
-                'این بخش هنوز محاسبه ندارد.\n'
-                'پس از مشخص‌شدن مدل و داده‌های معتبر اضافه می‌شود.',
-                color=MUTED,
-                font_size=sp(15)
+                "این بخش هنوز محاسبه ندارد.\n"
+                "پس از مشخص‌شدن مدل و داده‌های معتبر "
+                "اضافه می‌شود.",
+                font_size=sp(15),
             )
         )
+
         content.add_widget(Label())
         self.add_widget(content)
 
 
+class SplashScreen(Screen):
+    def __init__(self, **kwargs):
+        super().__init__(**kwargs)
+
+        with self.canvas.before:
+            Color(*BG)
+            self._background = Rectangle(
+                pos=self.pos,
+                size=self.size,
+            )
+
+        self.bind(
+            pos=self._paint_background,
+            size=self._paint_background,
+        )
+
+        content = BoxLayout(
+            orientation="vertical",
+            padding=[dp(12), dp(24)],
+            spacing=dp(8),
+        )
+
+        content.add_widget(
+            Label(size_hint_y=0.12)
+        )
+
+        # Large logo, fully visible without cropping.
+        content.add_widget(
+            Image(
+                source=str(
+                    BASE / "company-logo.webp"
+                ),
+                fit_mode="contain",
+                size_hint_y=0.68,
+            )
+        )
+
+        content.add_widget(
+            Label(
+                text="design by masih shariki",
+                font_name=FONT,
+                font_size=sp(13),
+                color=TEXT,
+                size_hint_y=None,
+                height=dp(24),
+                halign="center",
+            )
+        )
+
+        content.add_widget(
+            Label(
+                text="09122012248",
+                font_name=FONT,
+                font_size=sp(12),
+                color=MUTED,
+                size_hint_y=None,
+                height=dp(22),
+                halign="center",
+            )
+        )
+
+        content.add_widget(
+            Label(size_hint_y=0.10)
+        )
+
+        content.add_widget(
+            FaLabel(
+                "در حال ورود به برنامه...",
+                font_size=sp(12),
+                color=MUTED,
+                halign="center",
+            )
+        )
+
+        self.progress = ProgressBar(
+            max=100,
+            value=0,
+            size_hint_y=None,
+            height=dp(12),
+        )
+        content.add_widget(self.progress)
+
+        content.add_widget(
+            Label(size_hint_y=0.04)
+        )
+
+        self.add_widget(content)
+
+    def _paint_background(self, *args):
+        self._background.pos = self.pos
+        self._background.size = self.size
+
+
 class NDTMainApp(App):
-    current_source = StringProperty('Ir-192')
+    current_source = StringProperty("Ir-192")
 
     def build(self):
         self.title = BRAND
-        self.icon = str(BASE / 'icon.png')
+        self._splash_event = None
+
+        icon = BASE / "icon.png"
+        if icon.is_file():
+            self.icon = str(icon)
+
         Window.clearcolor = BG
-        Window.softinput_mode = 'below_target'
-        Window.bind(on_keyboard=self.on_keyboard)
+        Window.softinput_mode = "below_target"
+        Window.bind(
+            on_keyboard=self.on_keyboard
+        )
 
         self.outer = ScreenManager(
-            transition=FadeTransition(duration=.2)
-        )
-
-        self._background_texture = CoreImage(
-            str(BASE / 'bg.png')
-        ).texture
-
-        with self.outer.canvas.before:
-            Color(1, 1, 1, 1)
-            self._background = Rectangle(
-                texture=self._background_texture,
-                pos=self.outer.pos,
-                size=self.outer.size
+            transition=FadeTransition(
+                duration=0.2
             )
-
-        self.outer.bind(
-            pos=self._paint_background,
-            size=self._paint_background
         )
 
-        home = Screen(name='home')
+        self._background = None
+        self._background_texture = None
+
+        background = BASE / "bg.png"
+
+        if background.is_file():
+            try:
+                self._background_texture = CoreImage(
+                    str(background)
+                ).texture
+
+                with self.outer.canvas.before:
+                    Color(1, 1, 1, 1)
+                    self._background = Rectangle(
+                        texture=self._background_texture,
+                        pos=self.outer.pos,
+                        size=self.outer.size,
+                    )
+
+                self.outer.bind(
+                    pos=self._paint_background,
+                    size=self._paint_background,
+                )
+
+            except Exception:
+                logging.exception(
+                    "Could not load background image"
+                )
+
+        home = Screen(name="home")
 
         root = BoxLayout(
-            orientation='vertical',
+            orientation="vertical",
             padding=[dp(8), dp(8)],
-            spacing=dp(6)
+            spacing=dp(6),
         )
 
         header = Card(
             size_hint_y=None,
             height=dp(72),
             padding=dp(10),
-            spacing=dp(10)
+            spacing=dp(10),
         )
-        header.add_widget(
-            Image(
-                source=str(BASE / 'logo.png'),
-                size_hint_x=None,
-                width=dp(56)
+
+        logo = BASE / "logo.png"
+        if not logo.is_file():
+            logo = BASE / "icon.png"
+
+        if logo.is_file():
+            header.add_widget(
+                Image(
+                    source=str(logo),
+                    size_hint_x=None,
+                    width=dp(56),
+                    fit_mode="contain",
+                )
             )
-        )
+
         header.add_widget(
             FaLabel(
                 BRAND,
                 color=TEXT,
                 font_size=sp(14),
-                pos_hint={'center_y': .5}
+                pos_hint={
+                    "center_y": 0.5
+                },
             )
         )
         root.add_widget(header)
 
         self.sm = ScreenManager(
-            transition=FadeTransition(duration=.12)
-        )
-        self.sm.add_widget(
-            SafetyScreen(self, name='safety')
-        )
-        self.sm.add_widget(
-            DecayScreen(self, name='decay')
-        )
-        self.sm.add_widget(
-            InfoScreen(name='info')
-        )
-        self.sm.add_widget(
-            PendingScreen(
-                'زمان پرتودهی',
-                name='exposure'
+            transition=FadeTransition(
+                duration=0.12
             )
         )
+
+        self.sm.add_widget(
+            SafetyScreen(
+                self,
+                name="safety",
+            )
+        )
+
+        self.sm.add_widget(
+            DecayScreen(
+                self,
+                name="decay",
+            )
+        )
+
+        self.sm.add_widget(
+            InfoScreen(name="info")
+        )
+
+        self.sm.add_widget(
+            PendingScreen(
+                "زمان پرتودهی",
+                name="exposure",
+            )
+        )
+
         root.add_widget(self.sm)
 
         nav = Card(
             size_hint_y=None,
             height=dp(62),
             padding=dp(6),
-            spacing=dp(6)
+            spacing=dp(6),
         )
 
         self.nav_buttons = {}
 
         for label, name in (
-            ('مرزبندی', 'safety'),
-            ('واپاشی', 'decay'),
-            ('پرتودهی', 'exposure'),
-            ('اطلاعات', 'info')
+            ("مرزبندی", "safety"),
+            ("واپاشی", "decay"),
+            ("پرتودهی", "exposure"),
+            ("اطلاعات", "info"),
         ):
             button = BlueButton(
                 label,
                 size_hint=(1, 1),
-                halign='center',
-                valign='middle',
+                halign="center",
+                valign="middle",
                 shorten=True,
-                shorten_from='right'
+                shorten_from="right",
             )
+
             button.bind(
-                size=lambda widget, size: setattr(
-                    widget,
-                    'text_size',
-                    (max(0, size[0] - dp(8)), size[1])
-                ),
+                size=self._size_nav_button,
                 on_release=lambda _, target=name:
-                self.switch_tab(target)
+                self.switch_tab(target),
             )
+
+            self._size_nav_button(
+                button,
+                button.size,
+            )
+
             self.nav_buttons[name] = button
             nav.add_widget(button)
 
@@ -665,30 +996,84 @@ class NDTMainApp(App):
         home.add_widget(root)
         self.outer.add_widget(home)
 
-        self.switch_tab('safety')
+        self.switch_tab("safety")
+
+        self.splash = SplashScreen(
+            name="splash"
+        )
+        self.outer.add_widget(self.splash)
+        self.outer.current = "splash"
+
         return self.outer
 
+    def on_start(self):
+        self._splash_elapsed = 0.0
+        self.splash.progress.value = 0
+
+        self._splash_event = Clock.schedule_interval(
+            self._update_splash,
+            1.0 / 30.0,
+        )
+
+    def _update_splash(self, dt):
+        self._splash_elapsed += dt
+
+        self.splash.progress.value = min(
+            100,
+            self._splash_elapsed
+            / SPLASH_SECONDS
+            * 100,
+        )
+
+        if self._splash_elapsed >= SPLASH_SECONDS:
+            self.outer.current = "home"
+            return False
+
+        return True
+
+    def _size_nav_button(self, widget, size):
+        widget.text_size = (
+            max(
+                0,
+                size[0] - dp(8),
+            ),
+            size[1],
+        )
+
     def _paint_background(self, *args):
-        self._background.pos = self.outer.pos
-        self._background.size = self.outer.size
+        if self._background is not None:
+            self._background.pos = self.outer.pos
+            self._background.size = self.outer.size
 
     def set_source(self, name):
         if name in ISOTOPES:
             self.current_source = name
 
     def switch_tab(self, name):
+        if not self.sm.has_screen(name):
+            return
+
         self.sm.current = name
 
         for key, button in self.nav_buttons.items():
             button.select(key == name)
 
     def on_keyboard(self, window, key, *args):
+        if key != 27:
+            return False
+
+        if not hasattr(self, "outer"):
+            return False
+
+        # Keep the splash visible until its timer finishes.
+        if self.outer.current == "splash":
+            return True
+
         if (
-            key == 27
-            and self.outer.current == 'home'
-            and self.sm.current != 'safety'
+            hasattr(self, "sm")
+            and self.sm.current != "safety"
         ):
-            self.switch_tab('safety')
+            self.switch_tab("safety")
             return True
 
         return False
@@ -696,6 +1081,10 @@ class NDTMainApp(App):
     def on_pause(self):
         return True
 
+    def on_stop(self):
+        if self._splash_event is not None:
+            self._splash_event.cancel()
 
-if __name__ == '__main__':
+
+if __name__ == "__main__":
     NDTMainApp().run()
